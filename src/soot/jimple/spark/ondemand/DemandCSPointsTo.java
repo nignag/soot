@@ -377,8 +377,7 @@ public final class DemandCSPointsTo implements PointsToAnalysis {
      */
     protected PointsToSet computeRefinedReachingObjects(VarNode v) {
         // must reset the refinement heuristic for each query
-        this.fieldCheckHeuristic = HeuristicType.getHeuristic(
-            heuristicType, pag.getTypeManager(), getMaxPasses());
+        this.fieldCheckHeuristic = heuristicType.getHeuristic(pag.getTypeManager(), getMaxPasses());
         doPointsTo = true;
         numPasses = 0;
         PointsToSet contextSensitiveResult = null;
@@ -494,8 +493,7 @@ public final class DemandCSPointsTo implements PointsToAnalysis {
 			Predicate<Set<AllocAndContext>> p2setPred) {
 		doPointsTo = true;
 		// DEBUG = v.getNumber() == 150;
-		this.fieldCheckHeuristic = HeuristicType.getHeuristic(heuristic, pag
-				.getTypeManager(), getMaxPasses());
+		this.fieldCheckHeuristic = heuristic.getHeuristic(pag.getTypeManager(), getMaxPasses());
 		numPasses = 0;
 		while (true) {
 			numPasses++;
@@ -603,8 +601,7 @@ public final class DemandCSPointsTo implements PointsToAnalysis {
 	 */
 	protected Set<VarNode> computeFlowsTo(AllocNode alloc,
 			HeuristicType heuristic) {
-		this.fieldCheckHeuristic = HeuristicType.getHeuristic(heuristic, pag
-				.getTypeManager(), getMaxPasses());
+		this.fieldCheckHeuristic = heuristic.getHeuristic(pag.getTypeManager(), getMaxPasses());
 		numPasses = 0;
 		Set<VarNode> smallest = null;
 		while (true) {
@@ -1702,8 +1699,7 @@ public final class DemandCSPointsTo implements PointsToAnalysis {
 
 	protected boolean refineAliasInternal(VarNode v1, VarNode v2,
 			PointsToSetInternal intersection, HeuristicType heuristic) {
-		this.fieldCheckHeuristic = HeuristicType.getHeuristic(heuristic, pag
-				.getTypeManager(), getMaxPasses());
+		this.fieldCheckHeuristic = heuristic.getHeuristic(pag.getTypeManager(), getMaxPasses());
 		numPasses = 0;
 		while (true) {
 			numPasses++;
@@ -2042,8 +2038,7 @@ public final class DemandCSPointsTo implements PointsToAnalysis {
 			HeuristicType heuristic) {
 		// G.v().out.println(badLocs);
 		this.doPointsTo = false;
-		this.fieldCheckHeuristic = HeuristicType.getHeuristic(heuristic, pag
-				.getTypeManager(), getMaxPasses());
+		this.fieldCheckHeuristic = heuristic.getHeuristic(pag.getTypeManager(), getMaxPasses());
 		try {
 			numPasses = 0;
 			while (true) {

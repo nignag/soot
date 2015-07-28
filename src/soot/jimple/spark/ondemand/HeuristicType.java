@@ -21,32 +21,50 @@ package soot.jimple.spark.ondemand;
 import soot.jimple.spark.internal.TypeManager;
 
 public enum HeuristicType {
+	MANUAL {
+		@Override
+		public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses) {
+			return new ManualFieldCheckHeuristic();
+		}
+	},
+	INCR {
+		@Override
+		public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses) {
+			return new InnerTypesIncrementalHeuristic(tm, maxPasses);
+		}
+	},
+	EVERY {
+		@Override
+		public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses) {
+			return EverythingHeuristic.INSTANCE;
+		}
+	},
+	MANUALINCR {
+		@Override
+		public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses) {
+			return new ManualAndInnerHeuristic(tm, maxPasses);
+		}
+	},
+	NOTHING {
+		@Override
+		public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses) {
+			return NothingHeuristic.INSTANCE;
+		}
+	};
 
-    MANUAL, INCR, EVERY, MANUALINCR, NOTHING;
-    
-    public static FieldCheckHeuristic getHeuristic(HeuristicType type,
-            TypeManager tm, int maxPasses) {
-        FieldCheckHeuristic ret = null;
-        switch (type) {
-        case MANUAL:
-            ret = new ManualFieldCheckHeuristic();
-            break;
-        case INCR:
-            ret = new InnerTypesIncrementalHeuristic(tm, maxPasses);
-            break;
-        case EVERY:
-            ret = new EverythingHeuristic();
-            break;
-        case MANUALINCR:
-            ret = new ManualAndInnerHeuristic(tm, maxPasses);
-            break;
-        case NOTHING:
-            ret = new NothingHeuristic();
-            break;
-        default:
-            break;
-        }
-        return ret;
-    }
+	abstract public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses);
+
+	/**
+	 *
+	 * @deprecated just use getHeuristic of {@link HeuristicType}
+	 * @param type
+	 * @param tm
+	 * @param maxPasses
+	 * @return
+	 */
+	@Deprecated
+	public static FieldCheckHeuristic getHeuristic(HeuristicType type, TypeManager tm, int maxPasses) {
+		return type.getHeuristic(tm, maxPasses);
+	}
 
 }

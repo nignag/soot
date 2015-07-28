@@ -20,19 +20,21 @@ package soot.jimple.spark.ondemand;
 
 import soot.jimple.spark.pag.SparkField;
 
-public class EverythingHeuristic implements FieldCheckHeuristic {
+public enum EverythingHeuristic implements FieldCheckHeuristic {
+	INSTANCE;
 
-    public boolean runNewPass() {
-        return false;
-    }
+	@Override
+	public boolean runNewPass() {
+		return false;
+	}
 
-    public boolean validateMatchesForField(SparkField field) {
-        return true;
-    }
+	@Override
+	public boolean validateMatchesForField(SparkField field) {
+		return true;
+	}
 
-    public boolean validFromBothEnds(SparkField field) {
-        return false;
-    }
-
-
+	@Override
+	public boolean validFromBothEnds(SparkField field) {
+		return false;
+	}
 }
