@@ -1,5 +1,5 @@
 /**
- * 
+ *
  */
 package soot.util;
 
@@ -19,6 +19,7 @@ class SmallPriorityQueue<E> extends PriorityQueue<E> {
 
 	private long queue = 0;
 
+	@Override 
 	void addAll() {
 		if (N == 0)
 			return;
@@ -27,9 +28,9 @@ class SmallPriorityQueue<E> extends PriorityQueue<E> {
 		min = 0;
 	}
 
-	SmallPriorityQueue(List<? extends E> universe, Map<E, Integer> ordinalMap) {
+	SmallPriorityQueue(List<? extends E> universe, Map<E, Numberable> ordinalMap) {
 		super(universe, ordinalMap);
-		assert universe.size() <= Long.SIZE;
+		assert universe.size() <= MAX_CAPACITY;
 	}
 
 	@Override
@@ -54,6 +55,11 @@ class SmallPriorityQueue<E> extends PriorityQueue<E> {
 	}
 
 	@Override
+	public boolean isEmpty() {
+		return queue == 0;
+	}
+
+	@Override
 	int nextSetBit(int fromIndex) {
 		assert fromIndex >= 0;
 
@@ -71,9 +77,11 @@ class SmallPriorityQueue<E> extends PriorityQueue<E> {
 	@Override
 	boolean add(int ordinal) {
 		long old = queue;
-		queue |= (1L << ordinal);
-		if (old == queue)
+		long mask = (1L << ordinal);
+		if (0 != (mask & old))
 			return false;
+
+		queue = old | mask;
 		min = Math.min(min, ordinal);
 		return true;
 	}
@@ -91,61 +99,64 @@ class SmallPriorityQueue<E> extends PriorityQueue<E> {
 		assert index >= 0;
 		assert index < N;
 
-		long old = queue;
-		queue &= ~(1L << index);
+		long mask = (1L << index);
 
-		if (old == queue)
+		if (0 == (queue & mask))
 			return false;
 
+		queue -= mask;
 		if (min == index)
-			min = nextSetBit(min + 1);
+			min++;
+
 		return true;
 	}
 
-	@Override
-	public boolean removeAll(Collection<?> c) {
+	private long getMask(Iterable<?> c) {
 		long mask = 0;
 		for (Object o : c) {
 			mask |= (1L << getOrdinal(o));
 		}
+		return mask;
+	}
+
+	@Override
+	public boolean removeAll(Collection<?> c) {
 		long old = queue;
-		queue &= ~mask;
-		min = nextSetBit(min);
+		queue &= ~getMask(c);
 		return old != queue;
 	}
 
 	@Override
 	public boolean retainAll(Collection<?> c) {
-		long mask = 0;
-		for (Object o : c) {
-			mask |= (1L << getOrdinal(o));
-		}
 		long old = queue;
-		queue &= mask;
-		min = nextSetBit(min);
+		queue &= getMask(c);
 		return old != queue;
 	}
 
 	@Override
 	public boolean containsAll(Collection<?> c) {
-		long mask = 0;
-		for (Object o : c) {
-			mask |= (1L << getOrdinal(o));
-		}
-		return (mask & ~queue) == 0;
+		return (getMask(c) & ~queue) == 0;
 	}
 
 	@Override
 	public boolean addAll(Collection<? extends E> c) {
-		long mask = 0;
-		for (Object o : c) {
-			mask |= (1L << getOrdinal(o));
+		if (c.isEmpty())
+			return false;
+		if (c instanceof SmallPriorityQueue) {
+			SmallPriorityQueue<?> q = (SmallPriorityQueue<?>) c;
+			if (q.universe == universe) {
+				if ((queue & ~q.queue) == 0)
+					return false;
+				queue |= q.queue;
+				min = Math.min(min, q.min);
+				return true;
+			}
 		}
 		long old = queue;
-		queue |= mask;
+		queue |= getMask(c);
 		if (old == queue)
 			return false;
-		min = nextSetBit(0);
+		min = 0;
 		return true;
 	}
 

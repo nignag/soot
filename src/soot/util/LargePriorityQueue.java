@@ -1,6 +1,7 @@
 package soot.util;
 
 import java.util.BitSet;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -11,9 +12,16 @@ class LargePriorityQueue<E> extends PriorityQueue<E> {
 	BitSet queue;
 	private long modCount = 0;
 
-	LargePriorityQueue(List<? extends E> universe, Map<E, Integer> ordinalMap) {
+	LargePriorityQueue(List<? extends E> universe, Map<E, Numberable> ordinalMap) {
 		super(universe, ordinalMap);
 		queue = new BitSet(N);
+	}
+
+	@Override
+	public void clear() {
+		queue.clear();
+		min = Integer.MAX_VALUE;
+		modCount++;
 	}
 
 	@Override
@@ -46,15 +54,27 @@ class LargePriorityQueue<E> extends PriorityQueue<E> {
 		queue.clear(ordinal);
 
 		if (min == ordinal)
-			min = nextSetBit(min + 1);
+			min++;
 
 		modCount++;
 		return true;
 	}
 
+
+	@Override
+	int removeMin() {
+		assert !isEmpty();
+		int i = queue.nextSetBit(min);
+		queue.clear(i);
+		min = i + 1;
+		modCount++;
+		return i;
+	}
+
+
 	@Override
 	boolean contains(int ordinal) {
-		return queue.get(ordinal);
+		return (ordinal >= min) && queue.get(ordinal);
 	}
 
 	@Override
@@ -72,4 +92,34 @@ class LargePriorityQueue<E> extends PriorityQueue<E> {
 		return queue.cardinality();
 	}
 
+	@Override
+	public boolean isEmpty() {
+		return queue.isEmpty();
+	}
+
+	@Override
+	public boolean addAll(Collection<? extends E> c) {
+		if (c.isEmpty())
+			return false;
+		if (c instanceof LargePriorityQueue) {
+			LargePriorityQueue<?> q = (LargePriorityQueue<?>) c;
+			if (q.universe == universe) {
+				min = queue.nextSetBit(min);
+				q.min = queue.nextSetBit(q.min);
+				if ((q.min < min) || (queue.length() < q.queue.length())) {
+					min = q.min;
+					queue.or(q.queue);
+				} else {
+					BitSet old = (BitSet) queue.clone();
+					queue.or(q.queue);
+					if (old.equals(queue))
+						return false;
+				}
+
+				modCount++;
+				return true;
+			}
+		}
+		return super.addAll(c);
+	}
 }

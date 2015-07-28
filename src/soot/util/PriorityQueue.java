@@ -1,17 +1,18 @@
 /**
- * 
+ *
  */
 package soot.util;
 
 import java.util.AbstractMap;
 import java.util.AbstractQueue;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.ConcurrentModificationException;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.HashMap;
 import java.util.Set;
 
 /**
@@ -20,7 +21,7 @@ import java.util.Set;
  * permit {@code null} elements. Inserting of elements that are not part of the
  * universe is also permitted (doing so will result in a
  * {@code NoSuchElementException}).
- * 
+ *
  * @author Steven Lambeth
  * @param <E> the type of elements held in the universe
  */
@@ -62,18 +63,38 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 		}
 	}
 
+	final private static class Box implements Numberable {
+		int number;
+
+		Box(int n) {
+			setNumber(n);
+		}
+
+		@Override
+		public void setNumber(int n) {
+			number = n;
+		}
+
+		@Override
+		public int getNumber() {
+			return number;
+		}
+	}
+
 	final List<? extends E> universe;
 	final int N;
 	int min = Integer.MAX_VALUE;
-	private Map<E, Integer> ordinalMap;
+	final private Map<E, Numberable> ordinalMap;
 
 	int getOrdinal(Object o) {
+		Numberable n = ordinalMap.get(o);
 		if (o == null)
 			throw new NullPointerException();
-		Integer i = ordinalMap.get(o);
-		if (i == null)
+
+		if (n == null)
 			throw new NoSuchElementException();
-		return i.intValue();
+
+		return n.getNumber();
 	}
 
 	/**
@@ -84,7 +105,7 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 	/**
 	 * Returns the index of the first bit that is set to <code>true</code> that
 	 * occurs on or after the specified starting index. If no such bit exists
-	 * then a value bigger that {@code N} is returned.
+	 * then a value greater or equal than {@code N} is returned.
 	 *
 	 * @param fromIndex
 	 *            the index to start checking from (inclusive).
@@ -100,29 +121,37 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * {@inheritDoc}
-	 * 
+	 *
 	 */
 	@Override
 	final public E peek() {
-		return isEmpty() ? null : universe.get(min);
+		if (isEmpty())
+			return null;
+		min = nextSetBit(min);
+		return universe.get(min);
 	}
 
 	/**
 	 * {@inheritDoc}
-	 * 
+	 *
 	 */
 	@Override
 	final public E poll() {
 		if (isEmpty())
 			return null;
-		E e = universe.get(min);
-		remove(min);
-		return e;
+		return universe.get(removeMin());
+	}
+
+	int removeMin() {
+		assert !isEmpty();
+		int i = min = nextSetBit(min);
+		remove(i);
+		return i;
 	}
 
 	/**
 	 * {@inheritDoc}
-	 * 
+	 *
 	 * @throws NoSuchElementException
 	 *             if e not part of the universe
 	 * @throws NullPointerException
@@ -135,7 +164,7 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * {@inheritDoc}
-	 * 
+	 *
 	 * @throws NoSuchElementException
 	 *             if e not part of the universe
 	 * @throws NullPointerException
@@ -148,17 +177,13 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * {@inheritDoc}
-	 * 
+	 *
 	 */
 	@Override
 	final public boolean remove(Object o) {
-		if (o == null || isEmpty())
+		if ((o == null) || isEmpty())
 			return false;
 		try {
-			if (o.equals(peek())) {
-				remove(min);
-				return true;
-			}
 			return remove(getOrdinal(o));
 		} catch (NoSuchElementException e) {
 		}
@@ -167,16 +192,13 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * {@inheritDoc}
-	 * 
+	 *
 	 */
 	@Override
 	final public boolean contains(Object o) {
-		if (o == null)
+		if ((o == null) || isEmpty())
 			return false;
 		try {
-			if (o.equals(peek()))
-				return true;
-
 			return contains(getOrdinal(o));
 		} catch (NoSuchElementException e) {
 		}
@@ -185,15 +207,25 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * {@inheritDoc}
-	 * 
+	 *
 	 */
 	@Override
-	public boolean isEmpty() {
-		return min >= N;
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		sb.append('{');
+		boolean isFirst = true;
+		for (E e : this) {
+			if (!isFirst) {
+				sb.append(',');
+			}
+			sb.append(e);
+			isFirst = false;
+		}
+		sb.append('}');
+		return sb.toString();
 	}
 
-	PriorityQueue(List<? extends E> universe, Map<E, Integer> ordinalMap) {
-		assert ordinalMap.size() == universe.size();
+	PriorityQueue(List<? extends E> universe, Map<E, Numberable> ordinalMap) {
 		this.universe = universe;
 		this.ordinalMap = ordinalMap;
 		this.N = universe.size();
@@ -201,7 +233,7 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * Creates a new full priority queue
-	 * 
+	 *
 	 * @param universe
 	 * @return
 	 */
@@ -211,7 +243,7 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * Creates a new empty priority queue
-	 * 
+	 *
 	 * @param universe
 	 * @return
 	 */
@@ -221,7 +253,7 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 
 	/**
 	 * Creates a new full priority queue
-	 * 
+	 *
 	 * @param universe
 	 * @return
 	 */
@@ -231,65 +263,76 @@ abstract public class PriorityQueue<E> extends AbstractQueue<E> {
 		return q;
 	}
 
+	public static <E> PriorityQueue<E> of(PriorityQueue<E> s) {
+		PriorityQueue<E> q = noneOf(s);
+		q.addAll();
+		return q;
+	}
+
+	public static <E> PriorityQueue<E> noneOf(PriorityQueue<E> s) {
+		return newPriorityQueue(s.universe, s.ordinalMap);
+	}
+
 	/**
 	 * Creates a new empty priority queue
-	 * 
+	 *
 	 * @param universe
 	 * @return
 	 */
 	public static <E> PriorityQueue<E> noneOf(List<? extends E> universe) {
-		Map<E, Integer> ordinalMap = new HashMap<E, Integer>(
-				2 * universe.size() / 3);
+		Map<E, Numberable> ordinalMap = new IdentityHashMap<E, Numberable>((3 * universe.size()) / 2);
+
 		int i = 0;
 		for (E e : universe) {
 			if (e == null)
 				throw new NullPointerException("null is not allowed");
-			if (ordinalMap.put(e, i++) != null)
+			if (ordinalMap.put(e, new Box(i++)) != null)
 				throw new IllegalArgumentException("duplicate key found");
 		}
-		
+
 		return newPriorityQueue(universe, ordinalMap);
 	}
-	
+
 	public static <E extends Numberable> PriorityQueue<E> of(List<? extends E> universe, boolean useNumberInterface) {
 		PriorityQueue<E> q = noneOf(universe, useNumberInterface);
 		q.addAll();
 		return q;
 	}
-	
-	public static <E extends Numberable> PriorityQueue<E> noneOf(final List<? extends E> universe, boolean useNumberInterface) {
-		if (!useNumberInterface)
-			return noneOf(universe);
-		
-		int i = 0;
-		for (E e : universe) {
-			e.setNumber(i++);
-		}
 
-		return newPriorityQueue(universe, new AbstractMap<E, Integer>() {		    
-			@SuppressWarnings("unchecked")
-			@Override
-			public Integer get(Object key) {
-				return ((E) key).getNumber();
+	public static <E extends Numberable> PriorityQueue<E> noneOf(final List<? extends E> universe, boolean useNumberInterface) {
+		if (useNumberInterface) {
+			int i = 0;
+			for (E e : universe) {
+				e.setNumber(i++);
 			}
-			
-			@Override
-			public int size() {
-				return universe.size();
-			}
-			
-			@Override
-			public Set<java.util.Map.Entry<E, Integer>> entrySet() {
-				throw new UnsupportedOperationException();
-			}
-		});
+
+			return newPriorityQueue(universe, new AbstractMap<E, Numberable>() {
+				@Override
+				public Numberable get(Object key) {
+					if (key instanceof Numberable) {
+						Numberable n = (Numberable) key;
+						if (universe.get(n.getNumber()) == key)
+							return n;
+					}
+					return null;
+				}
+
+				@Override
+				public Set<java.util.Map.Entry<E, Numberable>> entrySet() {
+					return Collections.emptySet();
+				}
+			});
+		}
+		return noneOf(universe);
 	}
-	
-	private static <E> PriorityQueue<E> newPriorityQueue(List<? extends E> universe, Map<E, Integer> ordinalMap) {
+
+
+	private static <E> PriorityQueue<E> newPriorityQueue(List<? extends E> universe, Map<E, Numberable> ordinalMap) {
 		if (universe.size() <= SmallPriorityQueue.MAX_CAPACITY)
 			return new SmallPriorityQueue<E>(universe, ordinalMap);
 		if (universe.size() <= MediumPriorityQueue.MAX_CAPACITY)
 			return new MediumPriorityQueue<E>(universe, ordinalMap);
 		return new LargePriorityQueue<E>(universe, ordinalMap);
-	} 
+	}
+
 }
