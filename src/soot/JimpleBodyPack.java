@@ -50,13 +50,9 @@ public class JimpleBodyPack extends BodyPack
         if(options.use_original_names())
             PhaseOptions.v().setPhaseOptionIfUnset( "jb.lns", "only-stack-locals");
         
-        if(Options.v().time()) Timers.v().splitTimer.start();
-
         PackManager.v().getTransform( "jb.tt" ).apply( b );
 
         PackManager.v().getTransform( "jb.ls" ).apply( b );
-
-        if(Options.v().time()) Timers.v().splitTimer.end();
 
         PackManager.v().getTransform( "jb.a" ).apply( b );
         PackManager.v().getTransform( "jb.ule" ).apply( b );
