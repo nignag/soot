@@ -18,7 +18,7 @@
  */
 
 /*
- * Modified by the Sable Research Group and others 1997-1999.  
+ * Modified by the Sable Research Group and others 1997-1999.
  * See the 'credits' file distributed with Soot for the complete list of
  * contributors.  (Soot is distributed at http://www.sable.mcgill.ca/soot)
  */
@@ -47,9 +47,22 @@ public abstract class ForwardFlowAnalysis<N, A> extends FlowAnalysis<N, A> {
 
 	@Override
 	protected void doAnalysis() {
-		int i = doAnalysis(GraphView.FORWARD, InteractionFlowHandler.FORWARD, unitToBeforeFlow, unitToAfterFlow);
+		int i = doAnalysis(Orderer.FORWARD, InteractionFlowHandler.FORWARD);
 
-		soot.Timers.v().totalFlowNodes += graph.size();
+		soot.Timers.v().totalFlowNodes += unitToBeforeFlow.size();
 		soot.Timers.v().totalFlowComputations += i;
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 * 
+	 * @param beforeFlow the before-flow of a node
+	 * @param node the finished node
+	 * @param afterFlow the after-flow of a node
+	 */
+	@Override
+	protected void onComplete(A beforeFlow, N node, A afterFlow) {
+		unitToBeforeFlow.put(node, beforeFlow);
+		unitToAfterFlow.put(node, afterFlow);
 	}
 }

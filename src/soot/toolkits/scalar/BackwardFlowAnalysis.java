@@ -18,7 +18,7 @@
  */
 
 /*
- * Modified by the Sable Research Group and others 1997-1999.  
+ * Modified by the Sable Research Group and others 1997-1999.
  * See the 'credits' file distributed with Soot for the complete list of
  * contributors.  (Soot is distributed at http://www.sable.mcgill.ca/soot)
  */
@@ -39,10 +39,10 @@ public abstract class BackwardFlowAnalysis<N, A> extends FlowAnalysis<N, A> {
 		super(graph);
 	}
 
-    /** 
-     * Returns <code>false</code> 
-     * @return false
-     **/
+	/**
+	 * Returns <code>false</code>
+	 * @return false
+	 **/
 	@Override
 	protected boolean isForward() {
 		return false;
@@ -50,9 +50,23 @@ public abstract class BackwardFlowAnalysis<N, A> extends FlowAnalysis<N, A> {
 
 	@Override
 	protected void doAnalysis() {
-		doAnalysis(GraphView.BACKWARD, InteractionFlowHandler.BACKWARD, unitToAfterFlow, unitToBeforeFlow);
+		doAnalysis(Orderer.BACKWARD, InteractionFlowHandler.BACKWARD);
 
 		// soot.Timers.v().totalFlowNodes += graph.size();
 		// soot.Timers.v().totalFlowComputations += numComputations;
+	}
+
+
+	/**
+	 * {@inheritDoc}
+	 * 
+	 * @param afterFlow the after-flow of a node
+	 * @param node the finished node
+	 * @param beforeFlow the before-flow of a node
+	 */
+	@Override
+	protected void onComplete(A afterFlow, N node, A beforeFlow) {
+		unitToAfterFlow.put(node, afterFlow);
+		unitToBeforeFlow.put(node, beforeFlow);
 	}
 }

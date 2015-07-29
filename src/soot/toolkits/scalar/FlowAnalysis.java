@@ -18,31 +18,34 @@
  */
 
 /*
- * Modified by the Sable Research Group and others 1997-1999.  
+ * Modified by the Sable Research Group and others 1997-1999.
  * See the 'credits' file distributed with Soot for the complete list of
  * contributors.  (Soot is distributed at http://www.sable.mcgill.ca/soot)
  */
 
 package soot.toolkits.scalar;
 
+import static java.util.Arrays.copyOf;
+
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.RandomAccess;
 
 import soot.options.Options;
 import soot.toolkits.graph.DirectedGraph;
 import soot.toolkits.graph.interaction.FlowInfo;
 import soot.toolkits.graph.interaction.InteractionHandler;
+import soot.util.ImmutableArrays;
 import soot.util.Numberable;
 import soot.util.PriorityQueue;
+
+import com.google.common.collect.ForwardingMap;
 
 /**
  * An abstract class providing a framework for carrying out dataflow analysis.
@@ -51,13 +54,20 @@ import soot.util.PriorityQueue;
  * corresponding flow analysis.
  */
 public abstract class FlowAnalysis<N, A> extends AbstractFlowAnalysis<N, A> {
-	public enum Flow {
+
+	protected enum Flow {
+		/**
+		 * Use the in-flow
+		 */
 		IN {
 			@Override
 			<F> F getFlow(Entry<?, F> e) {
 				return e.inFlow;
 			}
 		},
+		/**
+		 * Use the out-flow
+		 */
 		OUT {
 			@Override
 			<F> F getFlow(Entry<?, F> e) {
@@ -68,31 +78,46 @@ public abstract class FlowAnalysis<N, A> extends AbstractFlowAnalysis<N, A> {
 		abstract <F> F getFlow(Entry<?, F> e);
 	}
 	
-	static class Entry<D, F> implements Numberable {
-		final D data;
-		int number;
+	final static private class Entry<D, F> implements Numberable, Comparable<Entry<D, F>> {
 
-		/**
-		 * This Entry is part of a real scc.
-		 */
-		boolean isRealStronglyConnected;
+		final static private Entry<?,?>[] EMPTY_ENTRY = {};
+
+		final static private <D, F> Entry<D, F>[] emptyEntries() {
+			@SuppressWarnings("unchecked")
+			Entry<D, F>[] r = (Entry<D, F>[]) EMPTY_ENTRY;
+			return r;
+		}
+
+		final static private <D, F> Entry<D, F> newEntry(D data) {
+			return new Entry<D, F>(data);
+		}
 		
-		Entry<D, F>[] in;
-		Entry<D, F>[] out;
+		final D data;
+
+		int number = Integer.MIN_VALUE;
+		int nextSCC;
+
+		Entry<D, F>[] in = emptyEntries();
+		Entry<D, F>[] out= emptyEntries();
+
 		F inFlow;
 		F outFlow;
 
-		@SuppressWarnings("unchecked")
-		Entry(D u, Entry<D, F> pred) {
-			in = (Entry<D, F>[]) new Entry[] { pred };
+		Entry(D u) {
 			data = u;
-			number = Integer.MIN_VALUE;
-			isRealStronglyConnected = false;
 		}
 
 		@Override
 		public String toString() {
-			return data == null ? "" : data.toString();
+			return String.valueOf(data);
+		}
+
+		/**
+		 * tests if in and out flow are the same, and not null
+		 * @return
+		 */
+		private boolean isIdentity() {
+			return (inFlow == outFlow) && (null != outFlow);
 		}
 
 		@Override
@@ -104,237 +129,272 @@ public abstract class FlowAnalysis<N, A> extends AbstractFlowAnalysis<N, A> {
 		public int getNumber() {
 			return number;
 		}
-	}
-	
 
-	static enum Orderer {
-		INSTANCE;
-
-		/**
-		 * Creates a new {@code Entry} graph based on a {@code DirectedGraph}. This includes
-		 * pseudo topological order, local access for predecessors and successors, a graph
-		 * entry-point, a {@code Numberable} interface and a real strongly connected component marker.
-		 * @param g
-		 * @param gv
-		 * @param entryFlow
-		 * @return
-		 */
-		<D, F> List<Entry<D, F>> newUniverse (DirectedGraph<D> g, GraphView gv, F entryFlow) {
-			final int n = g.size();
-
-			Deque<Entry<D, F>> s = new ArrayDeque<Entry<D, F>>(n);
-			List<Entry<D, F>> universe = new ArrayList<Entry<D, F>>(n);
-			Map<D, Entry<D, F>> visited = new HashMap<D, Entry<D, F>>(((n+1) * 4) / 3);
-
-			// out of universe node
-			Entry<D, F> superEntry = new Entry<D, F>(null, null);
-			visitEntry(visited, superEntry, gv.getEntries(g));
-			superEntry.inFlow = entryFlow;
-			superEntry.outFlow = entryFlow;
-
-			
-			@SuppressWarnings("unchecked")
-			Entry<D, F>[] sv = new Entry[g.size()];
-			int[] si = new int[g.size()];
-			int index = 0;
-			
-			int i = 0;
-			Entry<D, F> v = superEntry;
-		
-			for (;;) {
-				if (i < v.out.length) {
-					Entry<D, F> w = v.out[i++];
-					
-					// an unvisited child node
-					if (w.number == Integer.MIN_VALUE) {
-						w.number = s.size();
-						s.add(w);
-						
-						visitEntry(visited, w, gv.getOut(g, w.data));
-						
-						// save old
-						si[index] = i;
-						sv[index] = v;
-						index++;
-						
-						i = 0;
-						v = w;
-					}
-				} else {
-					if (index == 0) {
-						assert universe.size() <= g.size();
-						Collections.reverse(universe);
-						return universe;
-					}
-					
-					universe.add(v);
-					sccPop(s, v);
-					
-					// restore old
-					index--;
-					v = sv[index];
-					i = si[index];
-				}
-			}
-		}
-		
-
-		@SuppressWarnings("unchecked")
-		private <D, F> Entry<D, F>[] visitEntry(Map<D, Entry<D, F>> visited, Entry<D, F> v, List<D> out) {
-			int n = out.size();
-			Entry<D, F>[] a = new Entry[n];
-
-			assert (out instanceof RandomAccess);
-			
-			for (int i = 0; i < n; i++) {
-				a[i] = getEntryOf(visited, out.get(i), v);
-			}
-
-			return v.out = a;
+		private void addIn(Entry<D, F> e) {
+			int l = in.length;
+			in = copyOf(in, l + 1);
+			in[l] = e;
 		}
 
-		private <D, F> Entry<D, F> getEntryOf(Map<D, Entry<D, F>> visited, D d, Entry<D, F> v) {
-			// either we reach a new node or a merge node, the latter one is rare
-			// so put and restore should be better that a lookup
-			// putIfAbsent would be the ideal strategy
-			
-			// add and restore if required
-			Entry<D, F> newEntry = new Entry<D, F>(d, v);
-			Entry<D, F> oldEntry = visited.put(d, newEntry);
-			
-			// no restore required
-			if (oldEntry == null)
-				return newEntry;
-			
-			// false prediction, restore the entry
-			visited.put(d, oldEntry);
-			
-			// adding self ref (real strongly connected with itself)
-			if (oldEntry == v)
-				oldEntry.isRealStronglyConnected = true;
-			
-			// merge nodes are rare, so this is ok
-			int l = oldEntry.in.length;
-			oldEntry.in = Arrays.copyOf(oldEntry.in, l + 1);
-			oldEntry.in[l] = v;		
-			return oldEntry;
+		@Override
+		public int compareTo(Entry<D, F> o) {
+			return number - o.number;
 		}
 
-		private <D, F> void sccPop(Deque<Entry<D, F>> s, Entry<D, F> v) {
-			int min = v.number;
-			for (Entry<D, F> e : v.out) {
-				assert e.number > Integer.MIN_VALUE;
-				min = Math.min(min, e.number);
-			}
-			
-			// not our SCC
-			if (min != v.number) {
-				v.number = min;
-				return;
-			}
-			
-			// we only want real SCCs (size > 1)
-			Entry<D, F> w = s.removeLast();
-			w.number = Integer.MAX_VALUE;
-			if (w == v) {
-				return;
-			}
-			
-			w.isRealStronglyConnected = true;
-			for (;;) {
-				w = s.removeLast();
-				assert w.number >= v.number;
-				w.isRealStronglyConnected = true;
-				w.number = Integer.MAX_VALUE;
-				if (w == v) {
-					assert w.in.length >= 2;
-					return;
-				}
-			}
-		}
 	}
 
 	enum InteractionFlowHandler {
-		NONE, 
+		NONE,
 		FORWARD {
 			@Override
-			public <A, N> void handleFlowIn(FlowAnalysis<N, A> a, N s) {
-				beforeEvent(stop(s), a, s);
+			<A, N> void handleFlowIn(FlowAnalysis<N, A> a, N s, A f) {
+				beforeEvent(stop(s), a, s, f);
 			}
 
 			@Override
-			public <A, N> void handleFlowOut(FlowAnalysis<N, A> a, N s) {
-				afterEvent(InteractionHandler.v(), a, s);
+			<A, N> void handleFlowOut(FlowAnalysis<N, A> a, N s, A f) {
+				afterEvent(InteractionHandler.v(), a, s, f);
 			}
 		},
 		BACKWARD {
 			@Override
-			public <A, N> void handleFlowIn(FlowAnalysis<N, A> a, N s) {
-				afterEvent(stop(s), a, s);
+			<A, N> void handleFlowIn(FlowAnalysis<N, A> a, N s, A f) {
+				afterEvent(stop(s), a, s, f);
 			}
 
 			@Override
-			public <A, N> void handleFlowOut(FlowAnalysis<N, A> a, N s) {
-				beforeEvent(InteractionHandler.v(), a, s);
+			<A, N> void handleFlowOut(FlowAnalysis<N, A> a, N s, A f) {
+				beforeEvent(InteractionHandler.v(), a, s, f);
 			}
 		};
 
-		<A, N> void beforeEvent(InteractionHandler i, FlowAnalysis<N, A> a, N s) {
-			A savedFlow = a.filterUnitToBeforeFlow.get(s);
-			if (savedFlow == null)
-				savedFlow = a.newInitialFlow();
-			a.copy(a.unitToBeforeFlow.get(s), savedFlow);
-			i.handleBeforeAnalysisEvent(new FlowInfo<A, N>(savedFlow, s, true));
+		<A, N> void handleFlowIn(FlowAnalysis<N, A> a, N s, A f) {}
+		<A, N> void handleFlowOut(FlowAnalysis<N, A> a, N s, A f) {}
+
+		<A, N> void beforeEvent(InteractionHandler i, FlowAnalysis<N, A> a, N s, A f) {
+			i.handleBeforeAnalysisEvent(newFlowInfo(a, s, f, true, a.filterUnitToBeforeFlow));
 		}
 
-		<A, N> void afterEvent(InteractionHandler i, FlowAnalysis<N, A> a, N s) {
-			A savedFlow = a.filterUnitToAfterFlow.get(s);
-			if (savedFlow == null)
-				savedFlow = a.newInitialFlow();
-			a.copy(a.unitToAfterFlow.get(s), savedFlow);
-			i.handleAfterAnalysisEvent(new FlowInfo<A, N>(savedFlow, s, false));
+		<A, N> void afterEvent(InteractionHandler i, FlowAnalysis<N, A> a, N s, A f) {
+			i.handleAfterAnalysisEvent(newFlowInfo(a, s, f, false, a.filterUnitToAfterFlow));
 		}
 
 		InteractionHandler stop(Object s) {
 			InteractionHandler h = InteractionHandler.v();
 			List<?> stopList = h.getStopUnitList();
-			if (stopList != null && stopList.contains(s)) {
+			if ((stopList != null) && stopList.contains(s)) {
 				h.handleStopAtNodeEvent(s);
 			}
 			return h;
 		}
 
-		public <A, N> void handleFlowIn(FlowAnalysis<N, A> a, N s) {}
-		public <A, N> void handleFlowOut(FlowAnalysis<N, A> a, N s) {}
+		<A, N> FlowInfo<A, N> newFlowInfo(FlowAnalysis<N, A> a, N s, A f, boolean b, Map<N, A> filter) {
+			A savedFlow = filter.get(s);
+			if (savedFlow == null)
+				savedFlow = a.newInitialFlow();
+			a.copy(f, savedFlow);
+			return new FlowInfo<A, N>(savedFlow, s, b);
+		}
 	}
-
-	enum GraphView {
+	
+	enum Orderer {
 		BACKWARD {
 			@Override
-			<N> List<N> getEntries(DirectedGraph<N> g) {
-				return g.getTails();
-			}
+			<K, V> Graph<V> newGraph(final DirectedGraph<K> g, final Mapper<K, V> mapper) {
+				return new Graph<V>() {
+					@Override
+					public V[] get() {
+						return mapper.newMapping(g.getTails());
+					}
 
-			@Override
-			<N> List<N> getOut(DirectedGraph<N> g, N s) {
-				return g.getPredsOf(s);
+					@Override
+					public V[] get(V v) {
+						return mapper.newMapping(g.getPredsOf(mapper.getKey(v)));
+					}
+				};
 			}
 		},
+
 		FORWARD {
 			@Override
-			<N> List<N> getEntries(DirectedGraph<N> g) {
-				return g.getHeads();
-			}
+			<K, V> Graph<V> newGraph(final DirectedGraph<K> g, final Mapper<K, V> mapper) {
+				return new Graph<V>() {
+					@Override
+					public V[] get() {
+						return mapper.newMapping(g.getHeads());
+					}
 
-			@Override
-			<N> List<N> getOut(DirectedGraph<N> g, N s) {
-				return g.getSuccsOf(s);
+					@Override
+					public V[] get(V v) {
+						return mapper.newMapping(g.getSuccsOf(mapper.getKey(v)));
+					}
+				};
 			}
 		};
+		
+		abstract <K,V> Graph<V> newGraph(DirectedGraph<K> g, Mapper<K,V> mapper);
+		
+		private static interface Graph<D> {
+			D[] get();
+			D[] get(D g);
+		}
+		
+		private static abstract class Mapper<K,V> {
+			
+			abstract K getKey(V value);
+			abstract V getValue(K key);
+			abstract V[] newArray(int size);
+			
+			V[] newMapping(List<K> out) {
+				V[] a = newArray(out.size());
+				for (int i = 0; i < a.length; i++) {
+					a[i] = getValue(out.get(i));
+				}
+				return a;
+			}
+		}
 
-		abstract <N> List<N> getEntries(DirectedGraph<N> g);
-		abstract <N> List<N> getOut(DirectedGraph<N> g, N s);
+		private static class Frame<V> {
+			final V v;
+			int i = 0;
+			boolean isRoot = true;
+
+			Frame(V v) {
+				this.v = v;
+			}
+
+			static <E> Frame<E> newFrame(E v) {
+				return new Frame<E>(v);
+			}
+		}
+
+		/**
+		 * Creates a new {@code Entry} graph based on a {@code DirectedGraph}. This includes
+		 * pseudo topological order, local access for predecessors and successors, a graph
+		 * entry-point and a {@code Numberable} interface.
+		 * @param g
+		 * @param outer out of universe node
+		 * @return
+		 */
+		<D, F> List<Entry<D, F>> newUniverse (DirectedGraph<D> g, F f) {
+			final int N = g.size();
+			
+			Mapper<D, Entry<D, F>> mapper = new Mapper<D, Entry<D, F>>() {
+				final Map<D, Entry<D, F>> map = new IdentityHashMap<D, Entry<D, F>>((2*N)+1);
+				final Entry<D, F>[] zero = Entry.emptyEntries();
+				
+				@Override
+				D getKey(Entry<D, F> value) {
+					return value.data;
+				}
+
+				@Override
+				Entry<D, F> getValue(D key) {
+					Entry<D, F> entry = map.get(key);
+					if (entry == null) {
+						map.put(key, entry = Entry.newEntry(key));
+					}
+					return entry;
+				}
+
+				@Override
+				Entry<D, F>[] newArray(int size) {
+					return Arrays.copyOf(zero, size);
+				}
+			};
+			
+			Entry<D, F> v = Entry.newEntry(null);
+			v.inFlow = v.outFlow = f;
+			
+			return buildUniverse(newGraph(g, mapper), mapper.newArray(N), v);
+		}
+		
+		private <D, F> List<Entry<D, F>> buildUniverse (Graph<Entry<D, F>> graph, Entry<D, F>[] result, Entry<D, F> v) {
+
+			Deque<Frame<Entry<D,F>>> deque = new ArrayDeque<Frame<Entry<D,F>>>(result.length);
+			
+			v.out = graph.get();
+
+			int rpo = result.length;
+
+			for (Frame<Entry<D, F>> frame = Frame.newFrame(v);;frame = deque.removeFirst()) {
+				v = frame.v;
+
+				while (frame.i < v.out.length) {
+					Entry<D, F> w = v.out[frame.i];
+
+					// an unvisited child node
+					if (w.getNumber() < 0) {
+						v = w;
+						v.out = graph.get(v);
+						v.setNumber(deque.size());
+						
+						deque.addFirst(frame);
+						frame = Frame.newFrame(v);
+						continue;
+					}
+
+					if (w.getNumber() < v.getNumber()) {
+						v.setNumber(w.getNumber());
+						frame.isRoot = false;
+					}
+
+					frame.i++;
+					w.addIn(v);
+				}
+
+				if (deque.isEmpty())
+					break;
+
+				if (frame.isRoot) {
+					// number of finished frames
+					int len = deque.size() - v.getNumber();
+					rpo -= len;
+
+					// first "frame"
+					result[rpo + 0] = v;
+					v.setNumber(rpo + 0);
+					v.nextSCC = len - 0;
+
+					// now process all tail frames
+					for (int j = 1; j < len; j++) {
+						v = deque.removeLast().v;
+						
+						result[rpo + j] = v;
+						v.setNumber(rpo + j);
+						v.nextSCC = len - j;
+					}
+				} else {
+					// not a root, move frame from head to tail
+					deque.addLast(frame);
+				}
+			}
+
+			return ImmutableArrays.asSubList(result, rpo);
+		}
 	}
+
+	
+	private class DefaultMap extends ForwardingMap<N,A> {
+		Map<N, A> inner;
+
+		DefaultMap(Map<N, A> m) {
+			inner = m;
+		}
+
+		@Override
+		public A get(Object key) {
+			A val = delegate().get(key);
+			if (null == val)
+				return newInitialFlow();
+			return val;
+		}
+
+		@Override
+		protected Map<N, A> delegate() {
+			return inner;
+		}
+	};
 
 	/** Maps graph nodes to OUT sets. */
 	protected Map<N, A> unitToAfterFlow;
@@ -346,7 +406,13 @@ public abstract class FlowAnalysis<N, A> extends AbstractFlowAnalysis<N, A> {
 	public FlowAnalysis(DirectedGraph<N> graph) {
 		super(graph);
 
-		unitToAfterFlow = new IdentityHashMap<N, A>(graph.size() * 2 + 1);
+		unitToAfterFlow = new IdentityHashMap<N,A>((graph.size() * 2) + 1);
+
+		// we are creating the mapping AFTER the flowThrough calculation,
+		// unfortunately the unitTo{Before|After}Flows are "protected",
+		// so this hack is required for backward-compatibility
+		unitToBeforeFlow = new DefaultMap(unitToBeforeFlow);
+		unitToAfterFlow = new DefaultMap(unitToAfterFlow);
 	}
 
 	/**
@@ -368,166 +434,161 @@ public abstract class FlowAnalysis<N, A> extends AbstractFlowAnalysis<N, A> {
 	 *            the returned flow
 	 **/
 	protected abstract void flowThrough(A in, N d, A out);
+	
+	/**
+	 * You can use this method instead of {@link #flowThrough(A, N, A)} if flow
+	 * {@code A} can be used like an immutable object.
+	 * 
+	 * @param in the input flow
+	 * @param d the current node
+	 * @return  the returned flow
+	 **/
+	protected A flowThrough(A in, N d) {
+		A out = newInitialFlow();
+		flowThrough(in, d, out);
+		return out;
+	}
 
 	/** Accessor function returning value of OUT set for s. */
-
 	public A getFlowAfter(N s) {
-		A a = unitToAfterFlow.get(s);
-		return a == null ? newInitialFlow() : a;
+		return unitToAfterFlow.get(s);
 	}
 
-	@Override
-	public A getFlowBefore(N s) {
-		A a = unitToBeforeFlow.get(s);
-		return a == null ? newInitialFlow() : a;
-	}
-
-	private void initFlow(Iterable<Entry<N, A>> universe, Map<N, A> in, Map<N, A> out) {
-		assert universe != null;
-		assert in != null;
-		assert out != null;
-
-		// If a node has only a single in-flow, the in-flow is always equal
-		// to the out-flow if its predecessor, so we use the same object.
-		// this saves memory and requires less object creation and copy calls.
-
-		// Furthermore a node can be marked as omissible, this allows us to use
-		// the same "flow-set" for out-flow and in-flow. A merge node with within
-		// a real scc cannot be omitted, as it could cause endless loops within
-		// the fixpoint-iteration!
-
-		for (Entry<N, A> n : universe) {
-			boolean omit = true;
-			if (n.in.length > 1) {
-				n.inFlow = newInitialFlow();
-				
-				// no merge points in loops
-				omit = !n.isRealStronglyConnected;
-			} else {
-				assert n.in.length == 1 : "missing superhead";
-				n.inFlow = getFlow(n.in[0], n);
-				assert n.inFlow != null : "topological order is broken";
-			}
-
-			if (omit && omissible(n.data)) {
-				// We could recalculate the graph itself but thats more expensive than
-				// just falling through such nodes.
-				n.outFlow = n.inFlow;
-			} else {
-				n.outFlow = newInitialFlow();
-			}
-
-			// for legacy api
-			in.put(n.data, n.inFlow);
-			out.put(n.data, n.outFlow);
+	/**
+	 * Processes a bunch of entries
+	 * @param list
+	 */
+	private void processResult(Collection<Entry<N, A>> list) {
+		for (Entry<N, A> c : list) {
+			onComplete(c.inFlow, c.data, c.outFlow);
 		}
 	}
 
 	/**
-	 * If a flow node can be omitted return <code>true</code>, otherwise
-	 * <code>false</code>. There is no guarantee a node will be omitted. A
-	 * omissible node does not influence the result of an analysis.
-	 * 
-	 * If you are unsure, don't overwrite this method
-	 * 
-	 * @param n the node to check
-	 * @return <code>false</code>
+	 * A callback handler for result processing.
+	 *
+	 * This handler will be called when the analysis of a {@code node} has been completed.
+	 *
+	 * @param inFlow the in-flow of a node
+	 * @param node the finished node
+	 * @param outFlow the out-flow of a node
 	 */
-	protected boolean omissible(N n) {
-		return false;
-	}
-	
+	abstract protected void onComplete(A inFlow, N node, A outFlow);
+
 	/**
 	 * You can specify which flow set you would like to use of node {@code from}
-	 * @param from
-	 * @param mergeNode
-	 * @return Flow.OUT
+	 *
+	 * @param source the source node, is {@code null} for entry node
+	 * @param destination the destination node
+	 * @return the outFlow of the source node
 	 */
-	protected Flow getFlow(N from, N mergeNode) {
+	protected Flow getFlow(N source, N destination) {
 		return Flow.OUT;
 	}
-	
-	private A getFlow(Entry<N, A> o, Entry<N, A> e) {
-		return (o.inFlow == o.outFlow) ? o.outFlow : getFlow(o.data, e.data).getFlow(o);
+
+	private A getFlow(Entry<N, A> src, Entry<N, A> dst) {
+		return (src.isIdentity() ? Flow.OUT : getFlow(src.data, dst.data)).getFlow(src);
 	}
-	
+
 	private void meetFlows(Entry<N, A> e) {
-		assert e.in.length >= 1;
+		A prev = null;
+		A in = null;
+		for (Entry<N, A> i : e.in) {
+			A flow = getFlow(i, e);
+			if (null == flow)
+				continue;
 
-		if (e.in.length > 1) {
-			boolean copy = true;
-			for (Entry<N, A> o : e.in) {
-				A flow = getFlow(o, e);
-				if (copy) {
-					copy = false;
-					copy(flow, e.inFlow);
-				} else {
-					mergeInto(e.data, e.inFlow, flow);
-				}
+			if (flow == prev)
+				continue;
+
+			if (null == prev) {
+				// copy reference on first match
+				in = flow;
+			} else {
+				// second match, create new merge-point
+				if (prev == in)
+					copy(prev, in = newInitialFlow());
+
+				mergeInto(e.data, in, flow);
 			}
+			prev = flow;
 		}
+
+		assert (null != in) : "node <"+e+"> has no in-flow";
+
+		e.inFlow = in;
 	}
 	
-	final int doAnalysis(GraphView gv, InteractionFlowHandler ifh, Map<N, A> inFlow, Map<N, A> outFlow) {
-		assert gv != null;
-		assert ifh != null;
+	private Entry<N, A>[] getOut(Entry<N, A> e, InteractionFlowHandler ifh) {
+		boolean isIdentity = e.isIdentity();
+		
+		meetFlows(e);
+		
+		ifh.handleFlowIn(this, e.data, e.inFlow);
 
-		ifh = Options.v().interactive_mode() ? ifh : InteractionFlowHandler.NONE;
-
-		final List<Entry<N, A>> universe = Orderer.INSTANCE.newUniverse(graph, gv, entryInitialFlow());
-
-		initFlow(universe, inFlow, outFlow);
-
-		Queue<Entry<N, A>> q = PriorityQueue.of(universe, true);
-
-		// Perform fixed point flow analysis
-		for (int numComputations = 0;; numComputations++) {
-			Entry<N, A> e = q.poll();
-			if (e == null)
-				return numComputations;
-
-			meetFlows(e);
-
-			// Compute beforeFlow and store it.
-			ifh.handleFlowIn(this, e.data);
-			boolean hasChanged = flowThrough(e);
-			ifh.handleFlowOut(this, e.data);
-
-			// Update queue appropriately
-			if (hasChanged) {
-				q.addAll(Arrays.asList(e.out));
-			}
-		}
-	}
-
-	private boolean flowThrough(Entry<N, A> d) {
-		// omitted, just fall through
-		if (d.inFlow == d.outFlow) {
-			assert !d.isRealStronglyConnected || d.in.length == 1;
-			return true;
+		Entry<N, A>[] r = Entry.emptyEntries();
+		A test = isIdentity ? e.inFlow : flowThrough(e.inFlow, e.data);
+		// on first flowThrough the previous outFlow is null, this allows fail-fast equals
+		// test can throw a NullPointerException implicitly!
+		if (!test.equals(e.outFlow)) {
+			e.outFlow = test;
+			r = e.out;
 		}
 		
-		if (d.isRealStronglyConnected) {
-			// A flow node that is influenced by at least one back-reference.
-			// It's essential to check if "flowThrough" changes the result.
-			// This requires the calculation of "equals", which itself
-			// can be really expensive - depending on the used flow-model.
-			// Depending on the "merge"+"flowThrough" costs, it can be cheaper
-			// to fall through. Only nodes with real back-references always 
-			// need to be checked for changes
-			A out = newInitialFlow();
-			flowThrough(d.inFlow, d.data, out);
-			if (out.equals(d.outFlow)) {
-				return false;
-			}
-			// copy back the result, as it has changed
-			copy(out, d.outFlow);
-			return true;
-		}
-
-		// no back-references, just calculate "flowThrough"
-		flowThrough(d.inFlow, d.data, d.outFlow);
-		return true;
+		ifh.handleFlowOut(this, e.data, e.outFlow);
+		
+		return r;
 	}
+	
+	final int doAnalysis(Orderer o, InteractionFlowHandler ifh) {
+		ifh = Options.v().interactive_mode() ? ifh : InteractionFlowHandler.NONE;
 
+		final List<Entry<N, A>> universe = o.newUniverse(graph, entryInitialFlow());
+		
+		PriorityQueue<Entry<N, A>> base = PriorityQueue.noneOf(universe, true);
+		Queue<Entry<N, A>> work = base;
+		Queue<Entry<N, A>> back = PriorityQueue.noneOf(base);
+		
+		int numComputations = 0;
+
+		for (int from = 0; from < universe.size(); ) {
+			int to = from + universe.get(from).nextSCC;
+			
+			// first flow, only back-edges are interesting
+			for (Entry<N, A> e : universe.subList(from, to)) {
+				for (Entry<N, A> out : getOut(e, ifh)) {
+					if (out.compareTo(e) <= 0) {
+						back.add(out);
+					}
+				}
+			}
+			
+			while (!back.isEmpty()) {
+				// swap worklists
+				Queue<Entry<N, A>> t = work;
+				work = back;
+				back = t;
+				
+				do {
+					Entry<N, A> e = work.poll();
+					for (Entry<N, A> out : getOut(e, ifh)) {
+						if (out.compareTo(e) <= 0) {
+							back.add(out);
+						} else {
+							if (out.getNumber() < to) {
+								work.add(out);
+							}
+						}
+					}
+					numComputations++;
+				}
+				while (!work.isEmpty());
+			}
+	
+			processResult(universe.subList(from, to));
+			from = to;
+		}
+		
+		return numComputations + universe.size();
+	}
 }
