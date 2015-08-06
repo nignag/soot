@@ -23,6 +23,10 @@ import soot.jimple.spark.pag.SparkField;
 public enum EverythingHeuristic implements FieldCheckHeuristic {
 	INSTANCE;
 
+	public static final EverythingHeuristic v() {
+		return INSTANCE;
+	}
+	
 	@Override
 	public boolean runNewPass() {
 		return false;

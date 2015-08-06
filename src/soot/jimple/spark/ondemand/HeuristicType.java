@@ -36,7 +36,7 @@ public enum HeuristicType {
 	EVERY {
 		@Override
 		public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses) {
-			return EverythingHeuristic.INSTANCE;
+			return EverythingHeuristic.v();
 		}
 	},
 	MANUALINCR {
@@ -48,7 +48,7 @@ public enum HeuristicType {
 	NOTHING {
 		@Override
 		public FieldCheckHeuristic getHeuristic(TypeManager tm, int maxPasses) {
-			return NothingHeuristic.INSTANCE;
+			return NothingHeuristic.v();
 		}
 	};
 
