@@ -41,13 +41,24 @@
 
 package soot.toolkits.scalar;
 
-import soot.*;
-import soot.toolkits.graph.*;
-import soot.util.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
 
-import soot.toolkits.graph.interaction.*;
-import soot.options.*;
+import soot.Timers;
+import soot.Trap;
+import soot.Unit;
+import soot.UnitBox;
+import soot.options.Options;
+import soot.toolkits.graph.PseudoTopologicalOrderer;
+import soot.toolkits.graph.UnitGraph;
+import soot.toolkits.graph.interaction.FlowInfo;
+import soot.toolkits.graph.interaction.InteractionHandler;
+import soot.util.Chain;
+import soot.util.PriorityQueue;
 
 /**
  * Abstract class providing an engine for branched forward flow analysis.
@@ -58,6 +69,7 @@ public abstract class ForwardBranchedFlowAnalysis<A> extends BranchedFlowAnalysi
 		super(graph);
 	}
 
+	@Override
 	protected boolean isForward() {
 		return true;
 	}
@@ -73,11 +85,7 @@ public abstract class ForwardBranchedFlowAnalysis<A> extends BranchedFlowAnalysi
 		}
 
 		if (s.branches()) {
-			List<A> l = (getBranchFlowAfter(s));
-			Iterator<A> it = l.iterator();
-
-			while (it.hasNext()) {
-				A fs = (it.next());
+			for (A fs : getBranchFlowAfter(s)) {
 				copy(fs, flowRepositories[repCount]);
 				previousAfterFlows.add(flowRepositories[repCount++]);
 			}
@@ -86,23 +94,7 @@ public abstract class ForwardBranchedFlowAnalysis<A> extends BranchedFlowAnalysi
 
 	@Override
 	protected void doAnalysis() {
-		final Map<Unit, Integer> numbers = new HashMap<Unit, Integer>();
-		List<Unit> orderedUnits = new PseudoTopologicalOrderer<Unit>().newList(graph, false);
-		{
-			int i = 1;
-			for (Unit u : orderedUnits) {
-				numbers.put(u, new Integer(i));
-				i++;
-			}
-		}
-
-		TreeSet<Unit> changedUnits = new TreeSet<Unit>(new Comparator<Unit>() {
-			public int compare(Unit o1, Unit o2) {
-				Integer i1 = numbers.get(o1);
-				Integer i2 = numbers.get(o2);
-				return (i1.intValue() - i2.intValue());
-			}
-		});
+		Queue<Unit> workList = PriorityQueue.of(new PseudoTopologicalOrderer<Unit>().newList(graph, false));
 
 		Map<Unit, ArrayList<A>> unitToIncomingFlowSets = new HashMap<Unit, ArrayList<A>>(graph.size() * 2 + 1, 0.7f);
 		List<Unit> heads = graph.getHeads();
@@ -122,7 +114,6 @@ public abstract class ForwardBranchedFlowAnalysis<A> extends BranchedFlowAnalysi
 		{
 			Chain<Unit> sl = ((UnitGraph) graph).getBody().getUnits();
 			for (Unit s : graph) {
-				changedUnits.add(s);
 
 				unitToBeforeFlow.put(s, newInitialFlow());
 
@@ -190,11 +181,10 @@ public abstract class ForwardBranchedFlowAnalysis<A> extends BranchedFlowAnalysi
 			for (int i = 0; i < maxBranchSize + 1; i++)
 				previousFlowRepositories[i] = newInitialFlow();
 
-			while (!changedUnits.isEmpty()) {
+			while (!workList.isEmpty()) {
 				A beforeFlow;
 
-				Unit s = changedUnits.first();
-				changedUnits.remove(s);
+				Unit s = workList.poll();
 				boolean isHead = heads.contains(s);
 
 				accumulateAfterFlowSets(s, previousFlowRepositories, previousAfterFlows);
@@ -265,9 +255,7 @@ public abstract class ForwardBranchedFlowAnalysis<A> extends BranchedFlowAnalysi
 
 				// Update queue appropriately
 				if (!afterFlows.equals(previousAfterFlows)) {
-					for (Unit succ : graph.getSuccsOf(s)) {
-						changedUnits.add(succ);
-					}
+					workList.addAll(graph.getSuccsOf(s));
 				}
 			}
 		}
